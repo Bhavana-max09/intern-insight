@@ -93,5 +93,8 @@ async function seed() {
   mongoose.disconnect();
   console.log('🎉 Database seeding complete!');
 }
+if (require.main === module) {
+  seed().catch(console.error);
+}
 
-seed().catch(console.error);
+module.exports = { seed };

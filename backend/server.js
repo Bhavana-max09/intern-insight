@@ -4,7 +4,10 @@ const cors = require('cors');
 require('dotenv').config();
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: ['https://intern-insight.vercel.app', 'http://localhost:3000'],
+  credentials: true
+}));
 app.use(express.json());
 
 require('./models/User');
@@ -82,6 +85,17 @@ app.get('/api/test-email', async (req, res) => {
     await checkDeadlines();
     res.json({ message: '✅ Email check triggered! Check your inbox.' });
   } catch(err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.get('/api/seed-database', async (req, res) => {
+  try {
+    const { seed } = require('./seed/seedData');
+    await seed();
+    res.json({ message: '✅ Database seeded with 31 companies and 62 internships!' });
+  } catch(err) {
+    console.error('Seed error:', err);
     res.status(500).json({ message: err.message });
   }
 });
