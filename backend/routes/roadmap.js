@@ -1,19 +1,29 @@
 const router = require('express').Router();
-const Groq = require('groq-sdk');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 const authMiddleware = require('../middleware/auth');
 const User = require('../models/User');
 const Internship = require('../models/Internship');
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
+// Initialize Gemini GenAI client
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({
+  model: 'gemini-2.5-flash',
+  generationConfig: { responseMimeType: 'application/json' }
 });
 
 router.post('/generate', authMiddleware, async (req, res) => {
   try {
     const { targetCompany, targetRole } = req.body;
-    const user = await User.findById(req.user.id);
+    if (!targetCompany || !targetRole) {
+      return res.status(400).json({ message: 'Target company and role are required' });
+    }
 
-    const userSkills = user.skills
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const userSkills = (user.skills || [])
       .map(s => `${s.name} (${s.level})`)
       .join(', ');
 
@@ -21,11 +31,11 @@ router.post('/generate', authMiddleware, async (req, res) => {
       .populate('company', 'name techStack');
 
     const targetInternships = internships.filter(i =>
-      i.company?.name?.toLowerCase().includes(targetCompany.toLowerCase())
+      i.company && i.company.name && i.company.name.toLowerCase().includes(targetCompany.toLowerCase())
     );
 
     const requiredSkills = targetInternships.flatMap(i =>
-      i.requiredSkills.map(s => `${s.name} (${s.level})`)
+      (i.requiredSkills || []).map(s => `${s.name || s} (${s.level || 'intermediate'})`)
     );
 
     const uniqueRequired = [...new Set(requiredSkills)].join(', ');
@@ -40,7 +50,7 @@ Required skills for this role: ${uniqueRequired || 'General software engineering
 
 Create a personalized 8-week learning roadmap to help this student get the internship.
 
-Return ONLY a valid JSON object like this with no extra text or markdown:
+Return a valid JSON object matching the following structure:
 {
   "summary": "2-3 sentence overview of the plan",
   "skillGaps": ["skill1", "skill2", "skill3"],
@@ -58,29 +68,38 @@ Return ONLY a valid JSON object like this with no extra text or markdown:
 }
     `;
 
-    console.log('🤖 Generating roadmap with Groq...');
+    console.log('🤖 Generating roadmap with Gemini...');
 
-    const completion = await groq.chat.completions.create({
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      model: 'llama-3.3-70b-versatile',
-      temperature: 0.7,
-      max_tokens: 2000,
-    });
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const responseText = response.text();
 
-    const responseText = completion.choices[0]?.message?.content || '';
-    console.log('🤖 Groq response received');
+    console.log('🤖 Gemini response received');
 
-    const cleanJson = responseText
-      .replace(/```json/g, '')
-      .replace(/```/g, '')
-      .trim();
+    // Clean JSON response (handles potential markdown wrapping)
+    let cleanJson = responseText.trim();
+    if (cleanJson.startsWith('```json')) {
+      cleanJson = cleanJson.substring(7);
+    }
+    if (cleanJson.startsWith('```')) {
+      cleanJson = cleanJson.substring(3);
+    }
+    if (cleanJson.endsWith('```')) {
+      cleanJson = cleanJson.substring(0, cleanJson.length - 3);
+    }
+    cleanJson = cleanJson.trim();
 
-    const roadmap = JSON.parse(cleanJson);
+    let roadmap;
+    try {
+      roadmap = JSON.parse(cleanJson);
+    } catch (parseErr) {
+      console.error('❌ Failed to parse roadmap JSON:', parseErr);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to parse roadmap JSON',
+        rawResponse: cleanJson,
+      });
+    }
 
     res.json({
       success: true,

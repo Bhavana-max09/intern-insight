@@ -14,7 +14,7 @@ router.get('/', async (req, res) => {
     }
     if (search) filter.role = { $regex: search, $options: 'i' };
     const internships = await Internship.find(filter)
-      .populate('company', 'name logo industry avgStipend rating')
+      .populate('company', 'name logo industry avgStipend rating headquarters techStack')
       .sort({ deadline: 1 });
     res.json(internships);
   } catch (err) {

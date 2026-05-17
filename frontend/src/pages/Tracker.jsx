@@ -57,6 +57,12 @@ export default function Tracker() {
   const updateProgress = async () => {
     if (!progressSkill.skill) return;
     await api.put('/users/upskill', progressSkill);
+    setProgressSkill({
+      skill: '',
+      percentComplete: 50,
+      currentLevel: 'beginner',
+      targetLevel: 'intermediate',
+    });
     loadAll();
   };
 

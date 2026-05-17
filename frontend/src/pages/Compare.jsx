@@ -8,9 +8,11 @@ export default function Compare() {
 
   useEffect(() => {
     api.get('/internships').then(({ data }) => {
-      const unique = [...new Map(data.map(d => [d.company._id, d.company])).values()];
+      if (!data || !Array.isArray(data)) return;
+      const valid = data.filter(d => d && d.company && d.company._id);
+      const unique = [...new Map(valid.map(d => [d.company._id, d.company])).values()];
       setCompanies(unique);
-    });
+    }).catch(err => console.error('Error loading companies:', err));
   }, []);
 
   const toggleCompany = (company) => {

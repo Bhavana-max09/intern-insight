@@ -1,3 +1,6 @@
+const dns = require('dns');
+dns.setServers(['8.8.8.8', '8.8.4.4']); // Use Google DNS (router DNS can't resolve MongoDB SRV records)
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -5,10 +8,16 @@ require('dotenv').config();
 
 const app = express();
 app.use(cors({
-  origin: ['https://intern-insight.vercel.app', 'http://localhost:3000'],
+  origin: ['https://intern-insight.vercel.app', 'http://localhost:3000', 'http://localhost:5173'],
   credentials: true
 }));
 app.use(express.json());
+
+// Global request logger middleware
+app.use((req, res, next) => {
+  console.log(`📡 [API REQUEST] ${req.method} ${req.url}`);
+  next();
+});
 
 require('./models/User');
 require('./models/Company');
@@ -100,16 +109,21 @@ app.get('/api/seed-database', async (req, res) => {
   }
 });
 
+// Start server immediately regardless of DB status
+app.listen(process.env.PORT || 5000, () => {
+  console.log(`🚀 Server running on port ${process.env.PORT || 5000}`);
+});
+
+// Connect to MongoDB separately
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log('✅ MongoDB connected successfully');
     console.log('📦 Database:', mongoose.connection.name);
-    app.listen(process.env.PORT || 5000, () => {
-      console.log(`🚀 Server running on port ${process.env.PORT || 5000}`);
-      const { startReminderCron } = require('./utils/emailReminder');
-      startReminderCron();
-    });
+    const { startReminderCron } = require('./utils/emailReminder');
+    startReminderCron();
   })
   .catch(err => {
     console.log('❌ MongoDB connection FAILED:', err.message);
+    console.log('⚠️  Server is running but DB features are unavailable.');
+    console.log('👉 Fix: Go to cloud.mongodb.com → Network Access → Add Current IP');
   });

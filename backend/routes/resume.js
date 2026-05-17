@@ -2,6 +2,7 @@ const router = require('express').Router();
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 const authMiddleware = require('../middleware/auth');
 const User = require('../models/User');
 
@@ -24,63 +25,12 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
-const SKILL_KEYWORDS = [
-  'python', 'javascript', 'typescript', 'java', 'c++', 'c#', 'ruby', 'go',
-  'golang', 'rust', 'swift', 'kotlin', 'php', 'scala',
-  'react', 'angular', 'vue', 'node.js', 'nodejs', 'express', 'django',
-  'flask', 'spring', 'nextjs', 'next.js',
-  'mongodb', 'mysql', 'postgresql', 'redis', 'sqlite',
-  'aws', 'azure', 'gcp', 'docker', 'kubernetes',
-  'machine learning', 'deep learning', 'tensorflow', 'pytorch', 'keras',
-  'sql', 'html', 'css', 'git', 'linux', 'bash',
-  'data structures', 'algorithms', 'system design', 'rest api',
-  'graphql', 'kafka', 'spark', 'hadoop', 'pandas',
-  'numpy', 'scikit-learn', 'react native', 'flutter', 'firebase',
-];
-
-const extractSkills = (text) => {
-  const lowerText = text.toLowerCase();
-  const foundSkills = [];
-
-  SKILL_KEYWORDS.forEach(skill => {
-    if (lowerText.includes(skill.toLowerCase())) {
-      const skillIndex = lowerText.indexOf(skill.toLowerCase());
-      const context = lowerText.substring(
-        Math.max(0, skillIndex - 50),
-        skillIndex + 50
-      );
-
-      let level = 'beginner';
-      if (
-        context.includes('expert') ||
-        context.includes('advanced') ||
-        context.includes('senior')
-      ) {
-        level = 'advanced';
-      } else if (
-        context.includes('intermediate') ||
-        context.includes('proficient') ||
-        context.includes('experienced')
-      ) {
-        level = 'intermediate';
-      }
-
-      const formattedSkill =
-        skill === 'nodejs' ? 'Node.js' :
-        skill === 'nextjs' ? 'Next.js' :
-        skill.charAt(0).toUpperCase() + skill.slice(1);
-
-      foundSkills.push({ name: formattedSkill, level });
-    }
-  });
-
-  return foundSkills.filter(
-    (skill, index, self) =>
-      index === self.findIndex(s =>
-        s.name.toLowerCase() === skill.name.toLowerCase()
-      )
-  );
-};
+// Initialize Gemini GenAI client
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({
+  model: 'gemini-2.5-flash',
+  generationConfig: { responseMimeType: 'application/json' }
+});
 
 router.post('/upload', authMiddleware, upload.single('resume'), async (req, res) => {
   try {
@@ -91,24 +41,77 @@ router.post('/upload', authMiddleware, upload.single('resume'), async (req, res)
     }
 
     console.log('📄 File saved at:', req.file.path);
-
     const dataBuffer = fs.readFileSync(req.file.path);
     console.log('📄 PDF buffer size:', dataBuffer.length);
 
-    console.log('📄 Starting PDF parse...');
+    let text = "";
+    let extractedSkills = [];
 
-    // Require inside function to get fresh instance
-    const pdfParse = require('pdf-parse');
-    const pdfData = await pdfParse(dataBuffer);
-    const text = pdfData.text;
+    // 1. Try parsing text locally first (Fastest)
+    try {
+      const pdfParse = require('pdf-parse');
+      const pdfData = await pdfParse(dataBuffer);
+      text = pdfData.text || "";
+    } catch (parseErr) {
+      console.warn("⚠️ Local pdf-parse failed, falling back to direct PDF upload...", parseErr);
+    }
 
-    console.log('📄 Extracted text length:', text.length);
-    console.log('📄 First 200 chars:', text.substring(0, 200));
+    // 2. Choose parsing strategy
+    if (text.trim().length > 100) {
+      console.log('📄 Text extracted successfully, analyzing with Gemini...');
+      const prompt = `
+Analyze the following resume text and extract all professional and technical skills.
+For each skill, determine the student's proficiency level: "beginner", "intermediate", or "advanced" based on context, years of experience, projects, or certifications listed.
 
-    const extractedSkills = extractSkills(text);
-    console.log('📄 Found skills:', extractedSkills);
+Resume Text:
+${text}
 
-    fs.unlinkSync(req.file.path);
+Return a valid JSON object matching the following structure:
+{
+  "skills": [
+    { "name": "Skill Name", "level": "beginner" | "intermediate" | "advanced" }
+  ]
+}
+      `;
+      
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const jsonRes = JSON.parse(response.text().trim());
+      extractedSkills = jsonRes.skills || [];
+    } else {
+      console.log('📄 Scanned or complex PDF layout. Analyzing PDF binary with Gemini...');
+      const prompt = `
+Analyze the attached resume PDF document and extract all professional and technical skills.
+For each skill, determine the student's proficiency level: "beginner", "intermediate", or "advanced" based on context, years of experience, projects, or certifications listed.
+
+Return a valid JSON object matching the following structure:
+{
+  "skills": [
+    { "name": "Skill Name", "level": "beginner" | "intermediate" | "advanced" }
+  ]
+}
+      `;
+      
+      const result = await model.generateContent([
+        {
+          inlineData: {
+            data: dataBuffer.toString("base64"),
+            mimeType: "application/pdf"
+          }
+        },
+        prompt
+      ]);
+      const response = await result.response;
+      const jsonRes = JSON.parse(response.text().trim());
+      extractedSkills = jsonRes.skills || [];
+    }
+
+    console.log('📄 Cleaned extracted skills from Gemini:', extractedSkills);
+
+    // Delete temp file
+    if (fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
 
     if (extractedSkills.length === 0) {
       return res.json({
@@ -118,9 +121,17 @@ router.post('/upload', authMiddleware, upload.single('resume'), async (req, res)
       });
     }
 
+    // Normalize format
+    const formattedExtracted = extractedSkills.map(s => ({
+      name: s.name.charAt(0).toUpperCase() + s.name.slice(1),
+      level: s.level ? s.level.toLowerCase() : 'beginner'
+    }));
+
+    // Update user profile skills
     const user = await User.findById(req.user.id);
     const existingSkillNames = user.skills.map(s => s.name.toLowerCase());
-    const newSkills = extractedSkills.filter(
+    
+    const newSkills = formattedExtracted.filter(
       s => !existingSkillNames.includes(s.name.toLowerCase())
     );
 
@@ -128,12 +139,15 @@ router.post('/upload', authMiddleware, upload.single('resume'), async (req, res)
     await User.findByIdAndUpdate(req.user.id, { skills: updatedSkills });
 
     res.json({
-      message: `Found ${extractedSkills.length} skills in your resume!`,
-      extractedSkills,
+      message: `Found ${formattedExtracted.length} skills in your resume!`,
+      extractedSkills: formattedExtracted,
       newSkillsAdded: newSkills.length,
     });
   } catch (err) {
     console.error('❌ Resume parse error:', err);
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
     res.status(500).json({ message: err.message });
   }
 });

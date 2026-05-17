@@ -86,16 +86,16 @@ export default function Roadmap() {
             <h2 className="font-bold text-indigo-800 text-lg mb-2">
               📋 Your Roadmap to {roadmap.targetCompany}
             </h2>
-            <p className="text-indigo-700 text-sm">{roadmap.roadmap.summary}</p>
+            <p className="text-indigo-700 text-sm">{roadmap.roadmap?.summary || 'No summary available.'}</p>
           </div>
 
-          {roadmap.roadmap.skillGaps?.length > 0 && (
+          {roadmap.roadmap?.skillGaps?.length > 0 && (
             <div className="bg-red-50 rounded-xl border border-red-200 p-5">
               <h2 className="font-bold text-red-700 mb-3">
                 ⚠️ Skills You Need to Learn
               </h2>
               <div className="flex flex-wrap gap-2">
-                {roadmap.roadmap.skillGaps.map((skill, i) => (
+                {(roadmap.roadmap.skillGaps || []).map((skill, i) => (
                   <span key={i} className="bg-red-100 text-red-700 text-sm px-3 py-1 rounded-full font-medium">
                     {skill}
                   </span>
@@ -109,7 +109,7 @@ export default function Roadmap() {
               📅 8-Week Learning Plan
             </h2>
             <div className="space-y-4">
-              {roadmap.roadmap.weeks?.map((week, i) => (
+              {(roadmap.roadmap?.weeks || []).map((week, i) => (
                 <div key={i} className="bg-white rounded-xl border border-gray-200 p-5">
                   <div className="flex items-center gap-3 mb-3">
                     <span className="bg-indigo-600 text-white text-sm font-bold px-3 py-1 rounded-full">
@@ -123,7 +123,7 @@ export default function Roadmap() {
                   <div className="mb-3">
                     <p className="text-xs font-medium text-gray-500 mb-2">Tasks:</p>
                     <ul className="space-y-1">
-                      {week.tasks?.map((task, j) => (
+                      {(week.tasks || []).map((task, j) => (
                         <li key={j} className="flex items-start gap-2 text-sm text-gray-700">
                           <span className="text-green-500 mt-0.5">✓</span>
                           {task}
@@ -135,7 +135,7 @@ export default function Roadmap() {
                     <div className="mb-3">
                       <p className="text-xs font-medium text-gray-500 mb-2">Resources:</p>
                       <div className="flex flex-wrap gap-2">
-                        {week.resources.map((resource, j) => (
+                        {(week.resources || []).map((resource, j) => (
                           <span key={j} className="bg-blue-50 text-blue-700 text-xs px-2 py-1 rounded-full">
                             📚 {resource}
                           </span>
@@ -153,11 +153,11 @@ export default function Roadmap() {
             </div>
           </div>
 
-          {roadmap.roadmap.tips?.length > 0 && (
+          {roadmap.roadmap?.tips?.length > 0 && (
             <div className="bg-yellow-50 rounded-xl border border-yellow-200 p-5">
               <h2 className="font-bold text-yellow-800 mb-3">💡 Pro Tips</h2>
               <ul className="space-y-2">
-                {roadmap.roadmap.tips.map((tip, i) => (
+                {(roadmap.roadmap.tips || []).map((tip, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm text-yellow-800">
                     <span>•</span>
                     {tip}

@@ -42,7 +42,9 @@ router.put('/upskill', authMiddleware, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
     const { skill, percentComplete, currentLevel } = req.body;
-    const existing = user.upskillProgress.find(u => u.skill === skill);
+    
+    // 1. Update or push upskillProgress
+    const existing = user.upskillProgress.find(u => u.skill.toLowerCase() === skill.toLowerCase());
     if (existing) {
       existing.percentComplete = percentComplete;
       existing.currentLevel = currentLevel;
@@ -55,6 +57,15 @@ router.put('/upskill', authMiddleware, async (req, res) => {
         targetLevel: req.body.targetLevel
       });
     }
+
+    // 2. Synchronize with main user.skills list
+    const skillIndex = user.skills.findIndex(s => s.name.toLowerCase() === skill.toLowerCase());
+    if (skillIndex === -1) {
+      user.skills.push({ name: skill, level: currentLevel });
+    } else {
+      user.skills[skillIndex].level = currentLevel;
+    }
+
     await user.save();
     res.json(user);
   } catch (err) {
