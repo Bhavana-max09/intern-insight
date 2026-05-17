@@ -9,8 +9,10 @@ import {
 import api from '../api/axios';
 import ProgressBar from '../components/ProgressBar';
 import SkillBadge from '../components/SkillBadge';
+import { useAuth } from '../context/AuthContext';
 
 export default function Tracker() {
+  const { refetchUser } = useAuth();
   const [profile, setProfile] = useState(null);
   const [applications, setApplications] = useState([]);
   const [newInternship, setNewInternship] = useState({
@@ -51,7 +53,7 @@ export default function Tracker() {
       endDate: new Date(),
     });
     setNewInternship({ company: '', role: '', skills: '' });
-    loadAll();
+    await Promise.all([loadAll(), refetchUser()]);
   };
 
   const updateProgress = async () => {
@@ -63,7 +65,7 @@ export default function Tracker() {
       currentLevel: 'beginner',
       targetLevel: 'intermediate',
     });
-    loadAll();
+    await Promise.all([loadAll(), refetchUser()]);
   };
 
   const radarData =

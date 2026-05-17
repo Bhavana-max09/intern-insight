@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import api from '../api/axios';
 import SkillBadge from '../components/SkillBadge';
+import { useAuth } from '../context/AuthContext';
 
 export default function SkillMatcher() {
+  const { refetchUser } = useAuth();
   const [predictions, setPredictions] = useState([]);
   const [userSkills, setUserSkills] = useState([]);
   const [newSkill, setNewSkill] = useState({ name: '', level: 'beginner' });
@@ -36,14 +38,14 @@ export default function SkillMatcher() {
     await api.put('/users/skills', { skills: updated });
     setUserSkills(updated);
     setNewSkill({ name: '', level: 'beginner' });
-    loadData();
+    await Promise.all([loadData(), refetchUser()]);
   };
 
   const removeSkill = async (skillName) => {
     const updated = userSkills.filter(s => s.name !== skillName);
     await api.put('/users/skills', { skills: updated });
     setUserSkills(updated);
-    loadData();
+    await Promise.all([loadData(), refetchUser()]);
   };
 
   const uploadResume = async (e) => {
@@ -66,7 +68,7 @@ export default function SkillMatcher() {
       });
 
       setUploadMessage(`✅ ${data.message} — ${data.newSkillsAdded} new skills added!`);
-      loadData();
+      await Promise.all([loadData(), refetchUser()]);
     } catch (err) {
       setUploadMessage('❌ Failed to parse resume. Try again!');
     }
